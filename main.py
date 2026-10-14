@@ -1,22 +1,27 @@
 import os
+from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
-    MessageHandler,
     CommandHandler,
+    MessageHandler,
     filters
 )
 from deep_translator import GoogleTranslator
 
-# توکن ربات
 TOKEN = "8588183259:AAEO38uYwX6_rzafp3wKKCxDfa_7HXTJNPc"
+
+app = FastAPI()
+
+# راه‌اندازی اپلیکیشن تلگرام
+telegram_app = ApplicationBuilder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = (
         "🦇 **به ربات مترجم پیشرفته خوش آمدید!**\n\n"
         "من آماده‌ام تا متن‌های شما را از هر زبانی به **فارسی** روان ترجمه کنم.\n\n"
-        "🛠 **راهنما:** کافیست روی پیامی که می‌خواهید ترجمه شود ریپلی بزنید و دستور `/farsi` را ارسال کنید.\n\n"
+        "🛠 **راهنما در گروه‌ها و پی‌وی:** کافیست روی پیامی که می‌خواهید ترجمه شود ریپلی بزنید و دستور `/farsi` را ارسال کنید.\n\n"
         "👨‍💻 **سازنده:** @batman1792"
     )
     await update.message.reply_text(welcome_message, parse_mode="Markdown")
@@ -24,14 +29,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def translate_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     
-    # بررسی اینکه آیا کاربر روی پیامی ریپلی زده است یا خیر
+    # بررسی ریپلی روی پیام متنی
     if message.reply_to_message and message.reply_to_message.text:
         text_to_translate = message.reply_to_message.text
-        
         try:
-            # ترجمه خودکار از هر زبانی به فارسی (پشتیبانی از تمام زبان‌ها)
+            # ترجمه خودکار از هر زبانی به فارسی
             translated = GoogleTranslator(source='auto', target='fa').translate(text_to_translate)
-            
             response_text = f"🌐 **ترجمه به فارسی:**\n\n{translated}"
             await message.reply_to_message.reply_text(response_text, parse_mode="Markdown")
         except Exception as e:
@@ -39,13 +42,21 @@ async def translate_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await message.reply_text("⚠️ لطفاً روی یک پیام متنی ریپلی بزنید و دستور `/farsi` را بفرستید.")
 
-if __name__ == '__main__':
-    # ساخت اپلیکیشن ربات
-    app = ApplicationBuilder().token(TOKEN).build()
+# ثبت دستورات
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("farsi", translate_reply))
 
-    # ثبت دستورات
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("farsi", translate_reply))
+@app.on_event("startup")
+async def startup():
+    await telegram_app.initialize()
 
-    print("Bot is up and running...")
-    app.run_polling()
+@app.post("/webhook")
+async def process_webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    return {"status": "Bot is running!"}
